@@ -1,0 +1,56 @@
+{
+  "brand": "Relay",
+  "tagline": "Build distribution",
+  "nav": {
+    "apps": "Apps",
+    "people": "People",
+    "account": "Account"
+  },
+  "signOut": "Sign out",
+  "language": "Language",
+  "roles": {
+    "admin": "Admin",
+    "user": "User"
+  },
+  "status": {
+    "active": "Active",
+    "inactive": "Inactive",
+    "expired": "Expired",
+    "current": "Current",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "restricted": "Restricted",
+    "you": "You"
+  },
+  "actions": {
+    "cancel": "Cancel",
+    "save": "Save changes",
+    "open": "Open",
+    "download": "Download",
+    "delete": "Delete",
+    "edit": "Edit",
+    "undo": "Undo",
+    "keepIt": "Keep it",
+    "close": "Close",
+    "working": "Working…",
+    "saving": "Saving…"
+  },
+  "loading": "Loading",
+  "none": "none",
+  "all": "all",
+  "time": {
+    "today": "today",
+    "yesterday": "yesterday",
+    "daysAgo_one": "{count} day ago",
+    "daysAgo_other": "{count} days ago"
+  },
+  "theme": {
+    "title": "Appearance",
+    "hint": "Follow the device setting, or pick one and stay with it.",
+    "system": "Match my device",
+    "light": "Light mode",
+    "dark": "Dark mode",
+    "switchToLight": "Switch to light mode",
+    "switchToDark": "Switch to dark mode"
+  }
+}

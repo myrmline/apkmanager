@@ -1,0 +1,59 @@
+{
+  "brand": "Relay",
+  "tagline": "توزيع الإصدارات",
+  "nav": {
+    "apps": "التطبيقات",
+    "people": "الأشخاص",
+    "account": "الحساب"
+  },
+  "signOut": "تسجيل الخروج",
+  "language": "اللغة",
+  "roles": {
+    "admin": "مدير",
+    "user": "مستخدم"
+  },
+  "status": {
+    "active": "مُفعَّل",
+    "inactive": "غير مُفعَّل",
+    "expired": "منتهي الصلاحية",
+    "current": "الإصدار الحالي",
+    "enabled": "مسموح بالدخول",
+    "disabled": "موقوف",
+    "restricted": "مقيَّد",
+    "you": "أنت"
+  },
+  "actions": {
+    "cancel": "إلغاء",
+    "save": "حفظ التغييرات",
+    "open": "فتح",
+    "download": "تنزيل",
+    "delete": "حذف",
+    "edit": "تعديل",
+    "undo": "التراجع عن التغييرات",
+    "keepIt": "الإبقاء عليه",
+    "close": "إغلاق",
+    "working": "جارٍ التنفيذ…",
+    "saving": "جارٍ الحفظ…"
+  },
+  "loading": "جارٍ التحميل",
+  "none": "لا يوجد",
+  "all": "الكل",
+  "time": {
+    "today": "اليوم",
+    "yesterday": "أمس",
+    "daysAgo_one": "قبل يوم واحد",
+    "daysAgo_two": "قبل يومين",
+    "daysAgo_few": "قبل {count} أيام",
+    "daysAgo_many": "قبل {count} يومًا",
+    "daysAgo_other": "قبل {count} يوم"
+  },
+  "theme": {
+    "title": "المظهر",
+    "hint": "اتبع إعداد الجهاز، أو اختر مظهرًا وابقَ عليه.",
+    "system": "حسب إعداد الجهاز",
+    "light": "المظهر الفاتح",
+    "dark": "المظهر الداكن",
+    "switchToLight": "التحويل إلى المظهر الفاتح",
+    "switchToDark": "التحويل إلى المظهر الداكن"
+  }
+}

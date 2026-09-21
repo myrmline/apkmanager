@@ -1,0 +1,37 @@
+{
+  "title": "Personnes",
+  "subtitle": "Les administrateurs gèrent les applications. Les utilisateurs téléchargent ce qui leur est attribué.",
+  "add": "Ajouter une personne",
+  "searchPlaceholder": "Rechercher par nom ou e-mail",
+  "loading": "Chargement des personnes",
+  "columns": { "name": "Nom", "role": "Rôle", "grants": "Accès", "added": "Ajouté le" },
+  "remove": "Retirer",
+  "empty": { "title": "Aucun résultat pour cette recherche", "body": "Essayez un terme plus court." },
+  "confirmRemove": {
+    "title": "Retirer {name} ?",
+    "body": "Son compte et tous ses accès disparaissent avec lui. Les applications déposées restent en place.",
+    "confirm": "Retirer la personne"
+  },
+  "toast": {
+    "enabled": "{name} peut se connecter",
+    "disabled": "{name} est désactivé",
+    "removed": "{name} a été retiré",
+    "saved": "Modifications enregistrées",
+    "added": "{name} a été ajouté"
+  },
+  "form": {
+    "addTitle": "Ajouter une personne",
+    "editTitle": "Modifier {name}",
+    "name": "Nom",
+    "email": "Adresse e-mail",
+    "role": "Rôle",
+    "roleSelfHint": "Vous ne pouvez pas changer votre propre rôle.",
+    "password": "Mot de passe",
+    "newPassword": "Nouveau mot de passe",
+    "passwordHintNew": "Au moins 8 caractères",
+    "passwordHintEdit": "Laissez vide pour conserver l’actuel",
+    "signIn": "Connexion",
+    "signInSelfHint": "Vous ne pouvez pas désactiver votre propre compte.",
+    "submitAdd": "Ajouter"
+  }
+}

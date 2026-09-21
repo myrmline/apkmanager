@@ -1,6 +1,6 @@
 import { createApp } from './app.js';
 import { config } from './lib/config.js';
-import { pool } from './db.js';
+import { db } from './db.js';
 
 const app = createApp();
 
@@ -10,7 +10,7 @@ const server = app.listen(config.port, () => {
 
 const shutdown = async () => {
   server.close();
-  await pool.end();
+  await db.destroy();
   process.exit(0);
 };
 

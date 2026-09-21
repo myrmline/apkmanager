@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
+import { useI18n } from '../lib/i18n.jsx';
 
 /**
- * Checklist of who may download a build. Admins are shown greyed out with a
- * note, because they can reach every build anyway.
+ * Checklist of who may download. Admins are left out, because they can reach
+ * everything anyway.
  */
 export default function UserPicker({ users, selected, onChange }) {
+  const { t } = useI18n();
   const [search, setSearch] = useState('');
 
   const visible = useMemo(() => {
@@ -19,10 +21,10 @@ export default function UserPicker({ users, selected, onChange }) {
   }, [users, search]);
 
   const toggle = (id) =>
-    onChange(selected.includes(id) ? selected.filter((v) => v !== id) : [...selected, id]);
+    onChange(selected.includes(id) ? selected.filter((value) => value !== id) : [...selected, id]);
 
-  const allVisibleIds = visible.filter((u) => u.isActive).map((u) => u.id);
-  const allPicked = allVisibleIds.length > 0 && allVisibleIds.every((id) => selected.includes(id));
+  const visibleIds = visible.filter((user) => user.isActive).map((user) => user.id);
+  const allPicked = visibleIds.length > 0 && visibleIds.every((id) => selected.includes(id));
 
   return (
     <div className="picker">
@@ -30,20 +32,22 @@ export default function UserPicker({ users, selected, onChange }) {
         <input
           type="search"
           className="input"
-          placeholder="Search people"
+          placeholder={t('apps.picker.searchPeople')}
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(event) => setSearch(event.target.value)}
         />
         <button
           type="button"
           className="btn btn-quiet btn-sm"
           onClick={() =>
-            onChange(allPicked ? selected.filter((id) => !allVisibleIds.includes(id)) : [
-              ...new Set([...selected, ...allVisibleIds]),
-            ])
+            onChange(
+              allPicked
+                ? selected.filter((id) => !visibleIds.includes(id))
+                : [...new Set([...selected, ...visibleIds])],
+            )
           }
         >
-          {allPicked ? 'Clear these' : 'Select these'}
+          {t(allPicked ? 'apps.picker.clearThese' : 'apps.picker.selectThese')}
         </button>
       </div>
 
@@ -60,19 +64,19 @@ export default function UserPicker({ users, selected, onChange }) {
                 <strong>{user.name}</strong>
                 <small>{user.email}</small>
               </span>
-              {!user.isActive && <span className="chip chip-mute">Deactivated</span>}
+              {!user.isActive && (
+                <span className="chip chip-mute">{t('apps.picker.deactivated')}</span>
+              )}
             </label>
           </li>
         ))}
-        {visible.length === 0 && (
-          <li className="picker-blank">No one matches that search.</li>
-        )}
+        {visible.length === 0 && <li className="picker-blank">{t('apps.picker.noMatch')}</li>}
       </ul>
 
       <p className="picker-foot">
         {selected.length === 0
-          ? 'No one can download this yet.'
-          : `${selected.length} ${selected.length === 1 ? 'person' : 'people'} can download this. Admins always can.`}
+          ? t('apps.picker.nobody')
+          : t('apps.picker.canDownload', { count: selected.length })}
       </p>
     </div>
   );

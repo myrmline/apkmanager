@@ -1,0 +1,14 @@
+{
+  "title": "Votre compte",
+  "languageTitle": "Langue",
+  "languageHint": "S’applique à ce navigateur uniquement.",
+  "passwordTitle": "Changer votre mot de passe",
+  "current": "Mot de passe actuel",
+  "next": "Nouveau mot de passe",
+  "nextHint": "Au moins 8 caractères",
+  "confirm": "Confirmer le nouveau mot de passe",
+  "submit": "Changer le mot de passe",
+  "mismatch": "Les deux nouveaux mots de passe ne correspondent pas.",
+  "tooShort": "Utilisez au moins 8 caractères.",
+  "changed": "Mot de passe modifié"
+}

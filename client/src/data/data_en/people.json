@@ -1,0 +1,37 @@
+{
+  "title": "People",
+  "subtitle": "Admins manage applications. Users download what they are given.",
+  "add": "Add a person",
+  "searchPlaceholder": "Search by name or email",
+  "loading": "Loading people",
+  "columns": { "name": "Name", "role": "Role", "grants": "Grants", "added": "Added" },
+  "remove": "Remove",
+  "empty": { "title": "No one matches that search", "body": "Try a shorter search term." },
+  "confirmRemove": {
+    "title": "Remove {name}?",
+    "body": "Their account and every access grant goes with them. Uploaded applications stay in place.",
+    "confirm": "Remove person"
+  },
+  "toast": {
+    "enabled": "{name} can sign in",
+    "disabled": "{name} is disabled",
+    "removed": "{name} removed",
+    "saved": "Changes saved",
+    "added": "{name} added"
+  },
+  "form": {
+    "addTitle": "Add a person",
+    "editTitle": "Edit {name}",
+    "name": "Name",
+    "email": "Email",
+    "role": "Role",
+    "roleSelfHint": "You cannot change your own role.",
+    "password": "Password",
+    "newPassword": "New password",
+    "passwordHintNew": "At least 8 characters",
+    "passwordHintEdit": "Leave blank to keep the current one",
+    "signIn": "Sign in",
+    "signInSelfHint": "You cannot disable your own account.",
+    "submitAdd": "Add person"
+  }
+}

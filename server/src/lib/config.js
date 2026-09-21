@@ -16,6 +16,7 @@ export const config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '12h',
   uploadDir: path.resolve(process.env.UPLOAD_DIR || './uploads'),
   maxUploadBytes: Number(process.env.MAX_UPLOAD_MB || 300) * 1024 * 1024,
+  maxIconBytes: Number(process.env.MAX_ICON_MB || 2) * 1024 * 1024,
   corsOrigins: (process.env.CORS_ORIGIN || 'http://localhost:5173')
     .split(',')
     .map((s) => s.trim())

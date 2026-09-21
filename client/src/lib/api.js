@@ -23,10 +23,7 @@ function authHeaders() {
 async function request(path, { method = 'GET', body } = {}) {
   const res = await fetch(BASE + path, {
     method,
-    headers: {
-      ...authHeaders(),
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
-    },
+    headers: { ...authHeaders(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
 
@@ -41,11 +38,11 @@ async function request(path, { method = 'GET', body } = {}) {
   return data;
 }
 
-/** Multipart upload over XHR, so large APKs can report progress. */
-function upload(path, formData, onProgress) {
+/** Multipart over XHR, so large APKs can report progress. */
+function upload(path, formData, onProgress, method = 'POST') {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', BASE + path);
+    xhr.open(method, BASE + path);
     const token = getToken();
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
@@ -77,7 +74,7 @@ async function downloadFile(path) {
     try {
       message = (await res.json()).error || message;
     } catch {
-      /* keep default */
+      /* keep the default */
     }
     throw new ApiError(message, res.status);
   }
@@ -97,37 +94,60 @@ async function downloadFile(path) {
   return name;
 }
 
+const withQuery = (path, params) => {
+  const query = new URLSearchParams(
+    Object.entries(params).filter(([, value]) => value !== '' && value != null),
+  );
+  return query.toString() ? `${path}?${query}` : path;
+};
+
+/** <img> cannot send an Authorization header, so the icon carries the token. */
+export const iconSrc = (application) =>
+  application?.iconUrl ? `${BASE}${application.iconUrl}?token=${getToken()}` : null;
+
 export const api = {
   login: (email, password) => request('/auth/login', { method: 'POST', body: { email, password } }),
   me: () => request('/auth/me'),
   changePassword: (currentPassword, newPassword) =>
     request('/auth/me/password', { method: 'PUT', body: { currentPassword, newPassword } }),
 
-  listUsers: (search = '') => request(`/users?search=${encodeURIComponent(search)}`),
+  listUsers: (search = '') => request(withQuery('/users', { search })),
   createUser: (payload) => request('/users', { method: 'POST', body: payload }),
   updateUser: (id, payload) => request(`/users/${id}`, { method: 'PUT', body: payload }),
+  setUserActive: (id, isActive) =>
+    request(`/users/${id}/active`, { method: 'PATCH', body: { isActive } }),
   deleteUser: (id) => request(`/users/${id}`, { method: 'DELETE' }),
 
-  listFiles: (params = {}) => {
-    const query = new URLSearchParams(
-      Object.entries(params).filter(([, v]) => v !== '' && v != null),
-    );
-    return request(`/files${query.toString() ? `?${query}` : ''}`);
-  },
-  getFile: (id) => request(`/files/${id}`),
-  createFile: (formData, onProgress) => upload('/files', formData, onProgress),
-  updateFile: (id, payload) => request(`/files/${id}`, { method: 'PUT', body: payload }),
-  deleteFile: (id) => request(`/files/${id}`, { method: 'DELETE' }),
-  setAccess: (id, userIds) => request(`/files/${id}/access`, { method: 'PUT', body: { userIds } }),
+  listApplications: (params = {}) => request(withQuery('/applications', params)),
+  getApplication: (id) => request(`/applications/${id}`),
+  createApplication: (formData, onProgress) => upload('/applications', formData, onProgress),
+  updateApplication: (id, formData, onProgress) =>
+    upload(`/applications/${id}`, formData, onProgress, 'PUT'),
+  setApplicationActive: (id, isActive) =>
+    request(`/applications/${id}/status`, { method: 'PATCH', body: { isActive } }),
+  deleteApplication: (id) => request(`/applications/${id}`, { method: 'DELETE' }),
+  setApplicationAccess: (id, userIds) =>
+    request(`/applications/${id}/access`, { method: 'PUT', body: { userIds } }),
 
-  addVersion: (id, formData, onProgress) => upload(`/files/${id}/versions`, formData, onProgress),
+  addVersion: (id, formData, onProgress) =>
+    upload(`/applications/${id}/versions`, formData, onProgress),
   updateVersion: (id, versionId, payload) =>
-    request(`/files/${id}/versions/${versionId}`, { method: 'PUT', body: payload }),
+    request(`/applications/${id}/versions/${versionId}`, { method: 'PUT', body: payload }),
+  setVersionNote: (id, versionId, note) =>
+    request(`/applications/${id}/versions/${versionId}/note`, { method: 'PUT', body: { note } }),
+  setVersionActive: (id, versionId, isActive) =>
+    request(`/applications/${id}/versions/${versionId}/active`, {
+      method: 'PATCH',
+      body: { isActive },
+    }),
+  setVersionAccess: (id, versionId, payload) =>
+    request(`/applications/${id}/versions/${versionId}/access`, { method: 'PUT', body: payload }),
   makeCurrent: (id, versionId) =>
-    request(`/files/${id}/versions/${versionId}/current`, { method: 'POST' }),
+    request(`/applications/${id}/versions/${versionId}/current`, { method: 'POST' }),
   deleteVersion: (id, versionId) =>
-    request(`/files/${id}/versions/${versionId}`, { method: 'DELETE' }),
+    request(`/applications/${id}/versions/${versionId}`, { method: 'DELETE' }),
 
-  downloadCurrent: (id) => downloadFile(`/files/${id}/download`),
-  downloadVersion: (id, versionId) => downloadFile(`/files/${id}/versions/${versionId}/download`),
+  downloadCurrent: (id) => downloadFile(`/applications/${id}/download`),
+  downloadVersion: (id, versionId) =>
+    downloadFile(`/applications/${id}/versions/${versionId}/download`),
 };

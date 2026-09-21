@@ -1,0 +1,56 @@
+{
+  "brand": "Relay",
+  "tagline": "Distribution des builds",
+  "nav": {
+    "apps": "Applications",
+    "people": "Personnes",
+    "account": "Compte"
+  },
+  "signOut": "Se déconnecter",
+  "language": "Langue",
+  "roles": {
+    "admin": "Administrateur",
+    "user": "Utilisateur"
+  },
+  "status": {
+    "active": "Actif",
+    "inactive": "Inactif",
+    "expired": "Expiré",
+    "current": "Version courante",
+    "enabled": "Activé",
+    "disabled": "Désactivé",
+    "restricted": "Restreint",
+    "you": "Vous"
+  },
+  "actions": {
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "open": "Ouvrir",
+    "download": "Télécharger",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "undo": "Annuler les modifications",
+    "keepIt": "Ne rien changer",
+    "close": "Fermer",
+    "working": "En cours…",
+    "saving": "Enregistrement…"
+  },
+  "loading": "Chargement",
+  "none": "aucune",
+  "all": "toutes",
+  "time": {
+    "today": "aujourd’hui",
+    "yesterday": "hier",
+    "daysAgo_one": "il y a {count} jour",
+    "daysAgo_other": "il y a {count} jours"
+  },
+  "theme": {
+    "title": "Apparence",
+    "hint": "Suivre le réglage de l’appareil, ou en choisir un et le garder.",
+    "system": "Comme mon appareil",
+    "light": "Mode clair",
+    "dark": "Mode sombre",
+    "switchToLight": "Passer en mode clair",
+    "switchToDark": "Passer en mode sombre"
+  }
+}

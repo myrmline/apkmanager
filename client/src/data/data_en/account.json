@@ -1,0 +1,14 @@
+{
+  "title": "Your account",
+  "languageTitle": "Language",
+  "languageHint": "Applies to this browser only.",
+  "passwordTitle": "Change your password",
+  "current": "Current password",
+  "next": "New password",
+  "nextHint": "At least 8 characters",
+  "confirm": "New password again",
+  "submit": "Change password",
+  "mismatch": "The two new passwords do not match.",
+  "tooShort": "Use at least 8 characters.",
+  "changed": "Password changed"
+}

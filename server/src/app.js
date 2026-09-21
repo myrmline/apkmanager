@@ -5,7 +5,7 @@ import { config } from './lib/config.js';
 import { errorHandler, notFound } from './lib/http.js';
 import authRoutes from './routes/auth.routes.js';
 import userRoutes from './routes/users.routes.js';
-import fileRoutes from './routes/files.routes.js';
+import applicationRoutes from './routes/applications.routes.js';
 
 export function createApp() {
   const app = express();
@@ -26,7 +26,7 @@ export function createApp() {
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
   app.use('/api/auth', authRoutes);
   app.use('/api/users', userRoutes);
-  app.use('/api/files', fileRoutes);
+  app.use('/api/applications', applicationRoutes);
 
   // Uploads are never served statically — every download goes through an
   // authorisation check in the files router.
