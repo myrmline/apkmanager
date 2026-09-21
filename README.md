@@ -1,11 +1,13 @@
 # Relay — APK distribution
 
-A small full-stack app for handing Android builds to named testers.
+A full-stack app for managing Android applications and handing their APK
+versions to named users.
 
-- **Backend** — Node.js (Express, ESM) + PostgreSQL
-- **Frontend** — React 18 + Vite + React Router
+- **Backend** — Node.js (Express, ESM) + PostgreSQL, all queries through the Knex query builder
+- **Frontend** — React 18 + Vite + React Router, mobile-first CSS, light/dark themes,
+  English / French / Arabic with RTL
 - **Auth** — JWT bearer tokens, bcrypt password hashes
-- **Roles** — `admin` (manages everything) and `user` (downloads what they are assigned)
+- **Roles** — `admin` (manages everything) and `user` (downloads what they are given)
 
 ---
 
@@ -24,8 +26,8 @@ createdb apk_manager
 cd server
 cp .env.example .env          # set DATABASE_URL and JWT_SECRET
 npm install
-npm run db:migrate            # creates the tables
-npm run db:seed               # creates one admin and three testers
+npm run db:migrate            # runs the Knex migrations
+npm run db:seed               # accounts + three demo applications
 npm run dev                   # http://localhost:4000
 
 # 3. Web app (second terminal)
@@ -35,9 +37,10 @@ npm run dev                   # http://localhost:5173
 ```
 
 The Vite dev server proxies `/api` to port 4000, so the browser stays on one
-origin. `npm run db:reset` drops the tables and re-seeds from scratch.
+origin. `npm run db:setup` migrates and seeds in one step; `npm run db:reset`
+rolls everything back and rebuilds.
 
-The seed script prints the accounts it creates, for example:
+The seed prints the accounts it creates:
 
 | Role   | Email               | Password    |
 | ------ | ------------------- | ----------- |
@@ -48,50 +51,183 @@ The seed script prints the accounts it creates, for example:
 
 Change these before putting anything real in the system.
 
+The demo data is built to show every state at once: **Field Service** has an
+expired version, a live current version, and a switched-off beta restricted to
+one person; **Warehouse Scanner** has an inactive old version and a live one
+that expires in 45 days; **Reception Kiosk** is a deactivated application. The
+`.apk` files are generated placeholders of a realistic size with real SHA-256
+checksums — they download correctly but are not installable apps.
+
+---
+
+## Features
+
+### Application management
+
+An application is the product record: name, package name, description, icon,
+status, who created it, and when it last changed. Each one holds many APK
+versions.
+
+```
+Field Service          →  1.3.2, 1.4.0 (current), 1.5.0-beta
+Warehouse Scanner      →  2.0.0, 2.0.1 (current)
+```
+
+Admins can add, edit, delete, activate, or deactivate an application. A
+deactivated application disappears for users, and nothing inside it can be
+downloaded, but its history is kept.
+
+### Download status per version
+
+Each version carries two facts an admin can change at any time:
+
+| Field        | Meaning                                              |
+| ------------ | ---------------------------------------------------- |
+| `is_active`  | the Activate / Deactivate switch                     |
+| `expires_at` | optional deadline; downloads stop at the end of that day |
+
+The status shown in the interface is **derived from those two**, never stored
+separately, so there is nothing to keep in sync:
+
+| Shown      | When                                    |
+| ---------- | --------------------------------------- |
+| `Expired`  | `expires_at` is in the past             |
+| `Inactive` | the switch is off                       |
+| `Active`   | switch on, not expired                  |
+
+Each version also carries a free-form **note**, separate from its release
+description: a remark an admin leaves for whoever looks at the build later
+("signed with the new release key", "rebuilt from the release branch"). The
+**Note** button on a version opens a single text box; saving an empty box
+removes the note. Anyone who can see the version can read it — only admins can
+write it.
+
+One version per application can also be marked **current** — the one offered by
+the download button on the list. A user is offered the current version if they
+can download it, otherwise the newest they can.
+
+### Access
+
+Access is granted on the application, and each version can narrow it:
+
+- **Inherited** (the default) — the version uses the application's list.
+- **Restricted** — the version has its own list, for a beta or a pilot group.
+
+A non-admin can download a version only when all of this holds: the
+application is active, the version is active, its expiry has not passed, and
+they are on the version's own list if it has one, or the application's list if
+it does not. Admins can always reach everything, including expired and
+switched-off versions.
+
+### People
+
+Admins can add, edit, and remove accounts, switch someone between admin and
+user, and **enable or disable sign-in with one button** on the people list. The
+token is checked *and* the account reloaded on every request, so disabling
+someone takes effect on their very next click rather than when their token
+expires. The API refuses any change that would leave no active admin, and an
+admin cannot disable, demote, or delete their own account.
+
+---
+
+## Interface
+
+Written mobile-first: the base stylesheet targets a phone and `min-width`
+queries add tablet and desktop layout.
+
+- **Navigation** — one set of markup throughout. On a phone, a top bar plus a
+  bottom tab bar (with `safe-area-inset` padding); from 900px the two stack
+  into a left sidebar. Nothing is hidden behind a hamburger.
+- **Tables** — each row is a self-contained card on a phone, with every cell
+  labelled through `data-label`. From 760px the same markup becomes a CSS grid
+  with a header row that fills 100% of the content width, up to a 1440px
+  reading limit.
+- **Modals** — bottom sheets on a phone, centred dialogs from 600px.
+- **Touch** — 44px targets, 15px inputs so iOS does not zoom on focus.
+- **Dark mode** — a switch in the top bar, plus Light / Dark / *Match my
+  device* on the account page. The choice is stored in `localStorage`, applied
+  to `<html>` before first paint so a dark session never flashes white, and
+  follows the OS live while set to *Match my device*. Colours are declared once
+  as tokens and redefined for the dark theme; no component names a colour.
+- Status is never carried by colour alone — every chip and switch is labelled.
+  `prefers-reduced-motion` turns off all animation.
+
+### Languages
+
+English, French, and Arabic, switchable from the top bar and from the account
+page. The choice is stored in `localStorage`; with nothing stored, the browser's
+own language preference decides.
+
+All client text lives in `src/data/`, one folder per language:
+
+```
+src/data/
+  data_en/   common.json  auth.json  apps.json  people.json  account.json  index.js
+  data_fr/   … same files
+  data_ar/   … same files
+```
+
+Each `index.js` names the language and exports its files:
+
+```js
+export default { code: 'ar', label: 'العربية', dir: 'rtl', intl: 'ar-TN', common, auth, apps, ... };
+```
+
+- `src/lib/i18n.jsx` holds the provider. `t('apps.detail.settings')` reads a
+  dotted key; `t('apps.toast.created', { name })` fills `{name}` placeholders.
+- A key the active language is missing falls back to English, then to the key
+  itself, so an unfinished translation is visible rather than blank.
+- Plurals go through `Intl.PluralRules`, so each language uses the forms it
+  actually has: `_one` / `_other` for English and French, and
+  `_one` / `_two` / `_few` / `_many` / `_other` for Arabic — "3 أيام" for three
+  days but "20 يومًا" for twenty.
+- Dates, relative times, and file sizes are formatted with `Intl` in the active
+  locale, so French shows "8,3 MB" and Arabic reads dates right to left.
+- Choosing Arabic sets `dir="rtl"` on `<html>` before first paint. The layout is
+  written with flexbox and grid, so it mirrors on its own; a short `[dir='rtl']`
+  block at the end of `styles.css` handles the few asymmetric details (the back
+  arrow, the select caret, the switch knob, the nav marker). Version numbers,
+  package names, checksums, and emails are wrapped as LTR so their digits and
+  dots do not reorder inside Arabic text.
+
+Adding a language: copy a `data_xx` folder, translate the JSON, and add it to
+`LOCALES` in `src/lib/i18n.jsx`. Nothing else changes.
+
+Server error messages are still English — they are generated API-side, so
+translating them would mean sending message codes instead of sentences.
+
 ---
 
 ## Project structure
 
 ```
 server/
+  knexfile.cjs               development / test / production connections
+  migrations/                one file per change, applied in order
+  seeds/
+    01_users.cjs             accounts (upsert on email)
+    02_applications.cjs      demo apps, icons, versions, grants
   src/
-    index.js               starts the HTTP server
-    app.js                 express app, CORS, routers, error handler
-    db.js                  pg pool, query(), transaction()
-    schema.sql             every table, index, and constraint
-    lib/
-      config.js            environment variables in one place
-      http.js              HttpError + asyncHandler + error middleware
-      serialize.js         row -> JSON (never leaks password_hash)
-    middleware/
-      auth.js              requireAuth, requireAdmin, signToken
-      upload.js            multer disk storage, .apk filter, SHA-256
-    routes/
-      auth.routes.js       login, me, change own password
-      users.routes.js      user CRUD (admin only)
-      files.routes.js      files, versions, access, downloads
-    scripts/
-      migrate.js           applies schema.sql (--drop to start over)
-      seed.js              creates the first admin and sample testers
-  uploads/                 stored APKs, never served statically
+    index.js  app.js  db.js
+    lib/       config.js  http.js  serialize.js  params.js
+    middleware/auth.js  upload.js
+    routes/    auth.routes.js  users.routes.js  applications.routes.js
+  uploads/                   APKs and icons, never served statically
 
 client/
   src/
-    main.jsx               providers and router
-    App.jsx                routes and the admin-only guard
-    styles.css             design tokens and every component style
-    lib/
-      api.js               fetch wrapper, XHR upload, authorised download
-      auth.jsx             AuthProvider / useAuth
-      format.js            file sizes and dates
+    main.jsx  App.jsx  styles.css
+    data/      data_en/  data_fr/  data_ar/   all client-side text
+    lib/       api.js  auth.jsx  theme.jsx  i18n.jsx  format.js
     components/
-      Layout.jsx           side rail and navigation
-      ui.jsx               Modal, ConfirmDialog, Field, Status, toasts
-      UserPicker.jsx       searchable "who can download this" checklist
-      UploadModal.jsx      new build + first version + access list
-      NewVersionModal.jsx  new version of an existing build
+      Layout.jsx             top bar + tabs / sidebar
+      ui.jsx                 Modal, Switch, Status, icons, toasts, theme toggle
+      UserPicker.jsx         searchable access checklist
+      AppFormModal.jsx       create / edit an application, with its icon
+      VersionModal.jsx       upload or edit a version, with status and expiry
+      NoteModal.jsx          the note on a version
     pages/
-      Login.jsx  FilesPage.jsx  FileDetailPage.jsx
+      Login.jsx  ApplicationsPage.jsx  ApplicationDetailPage.jsx
       UsersPage.jsx  AccountPage.jsx
 ```
 
@@ -100,41 +236,69 @@ client/
 ## Data model
 
 ```
-users ──┬── files.created_by
-        ├── file_access.user_id        many-to-many: who may download what
-        └── file_versions.uploaded_by
+users ──┬── applications.created_by
+        ├── application_access.user_id      default access, per application
+        ├── version_access.user_id          optional override, per version
+        └── apk_versions.uploaded_by
 
-files ──┬── file_versions              one file, many versions
-        └── file_access
+applications ──┬── apk_versions             one app, many versions
+               └── application_access
 
-file_versions ── downloads             one row per download
+apk_versions ──┬── version_access
+               └── downloads                one row per download
 ```
 
-- `files` is the logical app record: name, package name, description, status
-  (`active` / `archived`).
-- `file_versions` holds the binaries: version string, release notes, status
-  (`draft` / `published` / `archived`), `is_current`, original filename, stored
-  filename, size, SHA-256 checksum, uploader, timestamp.
-- `UNIQUE (file_id, version)` stops duplicate version numbers.
-- A partial unique index, `UNIQUE (file_id) WHERE is_current`, means the
-  database itself guarantees at most one current version per file.
-- `file_access` is the grant table with a composite primary key, so a user
-  cannot be added twice to the same file.
-- Every foreign key has an explicit `ON DELETE` rule: deleting a file removes
-  its versions and grants, deleting a user removes their grants, and an
+- `UNIQUE (application_id, version)` stops duplicate version numbers.
+- A partial unique index, `UNIQUE (application_id) WHERE is_current`, means the
+  database guarantees at most one current version per application.
+- Both grant tables use composite primary keys, so nobody can be added twice.
+- Every foreign key has an explicit `ON DELETE` rule: deleting an application
+  removes its versions and grants, deleting a user removes their grants, and an
   uploader who leaves becomes `NULL` rather than taking the history with them.
 
-### How access is decided
+## Migrations and seeds
 
-| Who    | Sees                                                        |
-| ------ | ----------------------------------------------------------- |
-| admin  | every file and every version, including drafts               |
-| user   | `active` files granted to them, `published` versions only    |
+Schema changes go through [Knex](https://knexjs.org). The migration and seed
+files are `.cjs` because the Knex CLI loads them directly while the server runs
+as ESM. `src/db.js` builds one Knex instance from the same knexfile, and every
+query in the routes uses the query builder — see the note below.
 
-Access is granted per file and inherited by its versions. To hold a single
-build back from testers while keeping it downloadable by admins, upload it as
-a draft (or press **Hold back** on the version). Changing the access list
-takes effect immediately, for every version.
+```bash
+npm run db:migrate            # apply anything pending
+npm run db:rollback           # undo the last batch
+npm run db:status             # applied vs pending
+npm run db:seed               # re-run the seeds (safe to repeat)
+npm run db:setup              # migrate + seed
+npm run db:reset              # roll everything back, then migrate + seed
+npm run make:migration add_release_channel
+npm run make:seed 03_something
+```
+
+Anything else the CLI supports is available through `npm run knex -- <command>`.
+
+| Migration                        | Adds                                                  |
+| -------------------------------- | ----------------------------------------------------- |
+| `..._create_users`               | accounts, role check, `lower(email)` index            |
+| `..._create_files`               | the original file record                              |
+| `..._create_file_versions`       | binaries, unique version per file, one-current index  |
+| `..._create_file_access`         | the grant table                                       |
+| `..._create_downloads`           | the download log                                      |
+| `..._rename_to_applications`     | files → applications, versions → apk_versions, and the index and constraint names with them |
+| `..._version_download_status`    | `is_active` + `expires_at`, drops the old `status`    |
+| `..._application_status_values`  | applications are active/inactive, not archived        |
+| `..._application_icons`          | icon columns                                          |
+| `..._create_version_access`      | per-version access overrides                          |
+| `..._add_version_note`           | the free-form `note` on a version                     |
+
+Both seeds are safe to run repeatedly. `01_users` upserts on email, so it
+resets the demo passwords without touching accounts created in the app.
+`02_applications` replaces the demo applications and sweeps its own placeholder
+files (all named `seed-…`), so re-seeding never duplicates rows or leaves stray
+files in `uploads/`.
+
+For production, set `NODE_ENV=production` and run `npm run db:migrate` as part
+of the deploy; the `production` block in `knexfile.cjs` enables TLS and a
+larger pool.
 
 ---
 
@@ -145,76 +309,122 @@ All routes are under `/api`. Everything except `POST /auth/login` needs
 
 ### Auth
 
-| Method | Path                 | Who   | Purpose                     |
-| ------ | -------------------- | ----- | --------------------------- |
-| POST   | `/auth/login`        | any   | returns `{ token, user }`   |
-| GET    | `/auth/me`           | auth  | the signed-in user          |
-| PUT    | `/auth/me/password`  | auth  | change your own password    |
+| Method | Path                 | Who   | Purpose                   |
+| ------ | -------------------- | ----- | ------------------------- |
+| POST   | `/auth/login`        | any   | returns `{ token, user }` |
+| GET    | `/auth/me`           | auth  | the signed-in user        |
+| PUT    | `/auth/me/password`  | auth  | change your own password  |
 
 ### Users
 
-| Method | Path          | Who   | Purpose                                  |
-| ------ | ------------- | ----- | ---------------------------------------- |
-| GET    | `/users`      | admin | list, `?search=`                         |
-| POST   | `/users`      | admin | create                                   |
-| PUT    | `/users/:id`  | admin | update name, email, role, password, active |
-| DELETE | `/users/:id`  | admin | delete                                   |
+| Method | Path                 | Who   | Purpose                                |
+| ------ | -------------------- | ----- | -------------------------------------- |
+| GET    | `/users`             | admin | list, `?search=`                       |
+| POST   | `/users`             | admin | create                                 |
+| PUT    | `/users/:id`         | admin | name, email, role, password, sign-in   |
+| PATCH  | `/users/:id/active`  | admin | the enable / disable switch            |
+| DELETE | `/users/:id`         | admin | delete                                 |
 
-### Files and versions
+### Applications
 
-| Method | Path                                        | Who   | Purpose                        |
-| ------ | ------------------------------------------- | ----- | ------------------------------ |
-| GET    | `/files`                                    | auth  | role-filtered list             |
-| GET    | `/files/:id`                                | auth  | details, versions, access list |
-| POST   | `/files`                                    | admin | upload a build (multipart)     |
-| PUT    | `/files/:id`                                | admin | edit name, package, description, status |
-| DELETE | `/files/:id`                                | admin | delete the file and its APKs   |
-| PUT    | `/files/:id/access`                         | admin | replace the allowed-user list  |
-| POST   | `/files/:id/versions`                       | admin | upload a new version (multipart) |
-| PUT    | `/files/:id/versions/:vid`                  | admin | edit version, notes, status    |
-| POST   | `/files/:id/versions/:vid/current`          | admin | mark as the current version    |
-| DELETE | `/files/:id/versions/:vid`                  | admin | delete one version             |
-| GET    | `/files/:id/download`                       | auth  | download the current version   |
-| GET    | `/files/:id/versions/:vid/download`         | auth  | download a specific version    |
+| Method | Path                            | Who   | Purpose                              |
+| ------ | ------------------------------- | ----- | ------------------------------------ |
+| GET    | `/applications`                 | auth  | role-filtered list, `?search=&status=` |
+| GET    | `/applications/:id`             | auth  | details, versions, access list       |
+| GET    | `/applications/:id/icon`        | auth  | the icon (accepts `?token=` for `<img>`) |
+| POST   | `/applications`                 | admin | create (multipart, optional `icon`)  |
+| PUT    | `/applications/:id`             | admin | edit (multipart, `icon`, `removeIcon`) |
+| PATCH  | `/applications/:id/status`      | admin | activate / deactivate                |
+| DELETE | `/applications/:id`             | admin | delete, with its versions and files  |
+| PUT    | `/applications/:id/access`      | admin | replace the application access list  |
 
-Multipart fields for an upload: `file` (the .apk), `name`, `version`,
-`packageName`, `description`, `notes`, `versionStatus` (`published` |
-`draft`), `userIds` (JSON array), and for a new version `makeCurrent`.
+### APK versions
+
+| Method | Path                                                | Who   | Purpose                        |
+| ------ | --------------------------------------------------- | ----- | ------------------------------ |
+| POST   | `/applications/:id/versions`                        | admin | upload (multipart `file`)      |
+| PUT    | `/applications/:id/versions/:vid`                   | admin | version, description, switch, expiry |
+| PUT    | `/applications/:id/versions/:vid/note`              | admin | add, edit, or clear the note   |
+| PATCH  | `/applications/:id/versions/:vid/active`            | admin | the activate / deactivate button |
+| PUT    | `/applications/:id/versions/:vid/access`            | admin | `{ inherit: true }` or `{ userIds }` |
+| POST   | `/applications/:id/versions/:vid/current`           | admin | mark as current                |
+| DELETE | `/applications/:id/versions/:vid`                   | admin | delete one version             |
+| GET    | `/applications/:id/download`                        | auth  | the version on offer now       |
+| GET    | `/applications/:id/versions/:vid/download`          | auth  | a specific version             |
+
+Multipart fields for a version: `file`, `version`, `description`, `isActive`,
+`expiresAt` (`YYYY-MM-DD` or empty), `makeCurrent`, and `userIds` to restrict
+that version on upload.
 
 Errors come back as `{ "error": "A sentence you can show the user." }` with a
-matching status code: 400 invalid input, 401 not signed in, 403 no access,
-404 missing, 409 duplicate, 413 file too large.
+matching status: 400 invalid input, 401 not signed in, 403 no access, 404
+missing or unavailable, 409 duplicate, 413 file too large.
 
 ---
+
+## Queries
+
+There is no raw SQL in `server/src`: no `db.raw`, no `whereRaw`, no hand-written
+statements. Every read and write goes through the Knex query builder, which also
+means every value is parameterised by construction.
+
+Two builder features carry the parts that used to be raw:
+
+- `db.ref('a.id')` makes a correlated subquery refer to the outer row, so the
+  counts on the applications list (`version_count`, `user_count`,
+  `downloadable_count`) are `select({ … })` subqueries rather than SQL strings.
+- Knex modifiers keep the access rule in one place. `downloadableBy(userId)`
+  builds the whole condition — switch on, not expired, and on the version's own
+  list or the application's — with nested `where` callbacks, `whereExists`, and
+  `whereNotExists`. Any query that needs it calls
+  `.modify(downloadableBy(req.user.id))`.
+
+Two things changed shape as a result:
+
+- The user list for a non-admin was a `LEFT JOIN LATERAL`, which the builder has
+  no expression for. It is now one query for the versions they may download,
+  grouped into applications in JavaScript — clearer, and one query rather than a
+  correlated subquery per row.
+- Per-version access lists were a `json_agg`. They are now a second query joined
+  in memory.
+
+Logins match on a lowercased `email` rather than `lower(email)`, since every
+write stores the address lowercased; the expression index from the first
+migration is left in place and simply unused.
 
 ## Security notes
 
 - Passwords are bcrypt hashes (cost 10) and `password_hash` never leaves the
   server — every response goes through `lib/serialize.js`.
-- The token is verified **and** the user is reloaded from the database on every
-  request, so a demotion or deactivation takes effect at once instead of at
-  token expiry.
-- `uploads/` is not served as static files. Every download runs the access
-  check first and is recorded in `downloads`.
-- Uploads are limited by `MAX_UPLOAD_MB` and rejected unless the filename ends
-  in `.apk`. If the database insert fails, the orphaned upload is deleted.
-- Stored filenames are random, so a guessed URL cannot reach a binary and two
-  builds with the same name cannot overwrite each other.
+- The token is verified **and** the account reloaded on every request, so a
+  demotion or a disabled account takes effect at once.
+- `uploads/` is not served statically. Every APK and icon request runs the
+  access check first, and downloads are recorded in `downloads`.
+- A refused version download returns the same 404 whether it is switched off,
+  expired, or simply not granted, so the response does not leak which.
+- Uploads are limited by `MAX_UPLOAD_MB` / `MAX_ICON_MB` and restricted by
+  extension (`.apk`; PNG, JPEG, WebP, SVG for icons). A failed insert deletes
+  the orphaned upload.
+- Stored filenames are random, so a guessed URL cannot reach a binary.
 - CORS is restricted to the origins in `CORS_ORIGIN`.
-- The API refuses to leave the system without an active admin, and an admin
-  cannot demote, deactivate, or delete their own account.
 - Login failures return one message for both a wrong email and a wrong
-  password, so the response does not reveal which accounts exist.
+  password.
 
 ## Worth changing before production
 
 - `.apk` is enforced by extension only. Checking the ZIP magic bytes and
   parsing `AndroidManifest.xml` would confirm the file really is an APK and let
-  you read the true `versionCode` instead of trusting what the admin typed.
+  you read the true `versionCode` instead of trusting what was typed.
+- Icons are served through the API on every request. Put a cache or a CDN in
+  front, or move them to object storage with signed URLs.
 - Binaries sit on the local disk. Point `UPLOAD_DIR` at a mounted volume, or
-  swap `middleware/upload.js` for S3-compatible storage with signed URLs.
-- Tokens live in `localStorage`, which is convenient but readable by any script
-  on the page. An httpOnly refresh cookie is the stronger option.
+  swap `middleware/upload.js` for S3-compatible storage.
+- The icon URL carries the token as a query parameter so `<img>` can load it;
+  that value can appear in server logs. A short-lived signed URL would be
+  tighter.
+- Tokens live in `localStorage`. An httpOnly refresh cookie is stronger.
 - Add rate limiting on `POST /auth/login` (for example `express-rate-limit`).
-- Access is granted per file. If you need per-version grants instead, add a
-  `version_access` table and check it in `assertCanRead`.
+- Expiry is evaluated against the server clock in UTC, with a date-only input
+  treated as the end of that day in the server's timezone. If you have users
+  across timezones, store the intended zone alongside the date.
+# apkmanager
