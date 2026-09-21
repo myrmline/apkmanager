@@ -37,7 +37,9 @@
     "versionDeactivated": "Version {version} deactivated",
     "versionCurrent": "Version {version} is now current",
     "noteSaved": "Note saved",
-    "noteRemoved": "Note removed"
+    "noteRemoved": "Note removed",
+    "assetAdded": "{name} added",
+    "assetDeleted": "{name} deleted"
   },
   "expiry": {
     "none": "No expiry set",
@@ -59,7 +61,8 @@
       "currentVersion": "Current version",
       "versions": "Versions",
       "downloadable": "Downloadable now",
-      "added": "Added"
+      "added": "Added",
+      "folder": "Folder"
     },
     "versionsTitle": "APK versions",
     "versionsHintAdmin": "Newest first. Activate, expire, or restrict each version on its own.",
@@ -158,5 +161,20 @@
     "hint": "Everyone who can see this version can read the note. Leave it empty to remove it.",
     "save": "Save note",
     "none": "No note yet."
+  },
+  "assets": {
+    "title": "Files",
+    "hintAdmin": "Screenshots, guides, and anything else for this application, kept in its folder on the server.",
+    "hintUser": "Extra files that come with this application.",
+    "loading": "Loading files",
+    "empty": "No files yet.",
+    "add": "Add a file",
+    "uploading": "Uploading {percent}%",
+    "allowed": "Images, PDF, text, Markdown, JSON, CSV, or ZIP, up to 50 MB.",
+    "confirmDelete": {
+      "title": "Delete {name}?",
+      "body": "The file is removed from the server.",
+      "confirm": "Delete file"
+    }
   }
 }

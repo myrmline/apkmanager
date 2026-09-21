@@ -18,6 +18,7 @@ import {
 import AppFormModal from '../components/AppFormModal.jsx';
 import VersionModal from '../components/VersionModal.jsx';
 import NoteModal from '../components/NoteModal.jsx';
+import AssetsCard from '../components/AssetsCard.jsx';
 import UserPicker from '../components/UserPicker.jsx';
 
 export default function ApplicationDetailPage() {
@@ -168,6 +169,14 @@ export default function ApplicationDetailPage() {
           <small>{t('apps.detail.facts.added')}</small>
           {fmt.date(application.createdAt)}
         </span>
+        {isAdmin && application.storageDir && (
+          <span>
+            <small>{t('apps.detail.facts.folder')}</small>
+            <span className="mono" dir="ltr">
+              public/{application.storageDir}
+            </span>
+          </span>
+        )}
       </div>
 
       <div className="split">
@@ -319,6 +328,7 @@ export default function ApplicationDetailPage() {
           )}
         </section>
 
+        <div className="stack">
         <section className="card">
           <header className="card-head">
             <h2>{t(isAdmin ? 'apps.detail.accessTitleAdmin' : 'apps.detail.accessTitleUser')}</h2>
@@ -349,6 +359,9 @@ export default function ApplicationDetailPage() {
             </footer>
           )}
         </section>
+
+        <AssetsCard application={application} isAdmin={isAdmin} />
+        </div>
       </div>
 
       {editingVersion && (

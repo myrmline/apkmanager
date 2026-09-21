@@ -37,7 +37,9 @@
     "versionDeactivated": "Version {version} désactivée",
     "versionCurrent": "La version {version} est maintenant la version courante",
     "noteSaved": "Note enregistrée",
-    "noteRemoved": "Note supprimée"
+    "noteRemoved": "Note supprimée",
+    "assetAdded": "{name} a été ajouté",
+    "assetDeleted": "{name} a été supprimé"
   },
   "expiry": {
     "none": "Pas de date d’expiration",
@@ -59,7 +61,8 @@
       "currentVersion": "Version courante",
       "versions": "Versions",
       "downloadable": "Téléchargeables",
-      "added": "Ajoutée le"
+      "added": "Ajoutée le",
+      "folder": "Dossier"
     },
     "versionsTitle": "Versions d’APK",
     "versionsHintAdmin": "De la plus récente à la plus ancienne. Activez, faites expirer ou restreignez chaque version séparément.",
@@ -158,5 +161,20 @@
     "hint": "Toute personne qui voit cette version peut lire la note. Laissez le champ vide pour la supprimer.",
     "save": "Enregistrer la note",
     "none": "Aucune note pour l’instant."
+  },
+  "assets": {
+    "title": "Fichiers",
+    "hintAdmin": "Captures d’écran, guides et tout autre fichier de cette application, rangés dans son dossier sur le serveur.",
+    "hintUser": "Fichiers supplémentaires fournis avec cette application.",
+    "loading": "Chargement des fichiers",
+    "empty": "Aucun fichier pour l’instant.",
+    "add": "Ajouter un fichier",
+    "uploading": "Envoi {percent} %",
+    "allowed": "Images, PDF, texte, Markdown, JSON, CSV ou ZIP, jusqu’à 50 Mo.",
+    "confirmDelete": {
+      "title": "Supprimer {name} ?",
+      "body": "Le fichier est supprimé du serveur.",
+      "confirm": "Supprimer le fichier"
+    }
   }
 }

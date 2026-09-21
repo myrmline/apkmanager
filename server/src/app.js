@@ -28,9 +28,15 @@ export function createApp() {
   app.use('/api/users', userRoutes);
   app.use('/api/applications', applicationRoutes);
 
-  // Uploads are never served statically — every download goes through an
-  // authorisation check in the files router.
   app.use('/api', (_req, _res, next) => next(notFound('No such endpoint.')));
+
+  // There is deliberately no express.static in this app. public/ holds the
+  // files meant for distribution — APKs, icons, assets — but "public" describes
+  // their purpose, not their URL: every one is served by a route in
+  // applications.routes.js after an access check. Anything outside /api,
+  // including /public/…, is a plain 404, so the storage folders cannot be
+  // reached, guessed, or listed over HTTP.
+  app.use((_req, _res, next) => next(notFound('Not found.')));
   app.use(errorHandler);
 
   return app;

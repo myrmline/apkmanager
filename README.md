@@ -130,6 +130,88 @@ admin cannot disable, demote, or delete their own account.
 
 ---
 
+## File storage
+
+Every file the app distributes lives under `server/public/`, one folder per
+application:
+
+```
+server/public/
+  field-service/
+    icon.svg
+    apks/
+      1.3.2.apk
+      1.4.0.apk
+      1.5.0-beta.apk
+    assets/
+      install-guide.txt
+      release-notes.md
+  warehouse-scanner/
+    icon.svg
+    apks/2.0.0.apk
+    apks/2.0.1.apk
+    assets/
+```
+
+**"Public" describes the files, not their URL.** These are the files meant for
+distribution, but the folder is never served statically: there is no
+`express.static` anywhere in the server, and any request outside `/api` —
+including `/public/…` — is a 404. Every APK, icon, and asset is sent by a route
+in `applications.routes.js`, after the same access check that governs the
+application itself. The frontend shows and downloads them only through those
+routes.
+
+**Folders are created, renamed, and removed with the application**, so adding
+an application needs no code or config change:
+
+- The folder name is a slug of the application name: *Field Service* →
+  `field-service`. Letters from any script survive, so an Arabic name keeps an
+  Arabic folder name. Two applications with the same slug get `-2`, `-3`.
+- The name is stored in `applications.storage_dir`; the database, not a
+  recomputed slug, says where an application's files are.
+- Renaming an application renames its folder. A change that keeps the same slug
+  — fixing a capital letter — leaves it alone.
+- Each version is stored as `apks/{version}.apk`, and changing the version
+  number renames the file.
+- Replacing the icon replaces `icon.*`, whatever the old extension was.
+- Deleting an application deletes its folder.
+
+**Assets** — screenshots, guides, anything else — go in `assets/`. The folder
+itself is the index: there is no table, so whatever is in it is what the API
+lists. Admins upload and delete from the application page; anyone who can see
+the application can list and download. Accepted: images, PDF, text, Markdown,
+JSON, CSV, ZIP, up to `MAX_ASSET_MB`.
+
+**How files are kept inside their folders.** All path handling goes through
+`src/lib/storage.js`. Every name is passed through one sanitiser
+(`src/lib/slug.cjs`: no separators, no control characters, no leading dots, no
+Windows-reserved names), and every final path is resolved and checked to still
+be inside its folder before anything is read or written. The test suite sends
+`..`, encoded `..%2F`, backslashes, an absolute path, and a null byte as raw
+HTTP and confirms each is refused.
+
+**Uploads are staged in `server/tmp/`** and only moved into `public/` once the
+request has been validated, so a rejected upload never touches an application
+folder.
+
+**Moving from the old layout.** Earlier versions kept every file flat in
+`uploads/` under a random name. The `application_storage_folders` migration
+moves each one into place and updates the rows; files already missing are
+listed rather than guessed at. If it fails part-way, it moves back what it
+already moved. Rolling it back returns everything to the flat layout. Just run
+`npm run db:migrate`.
+
+| Variable          | Default     | Purpose                                     |
+| ----------------- | ----------- | ------------------------------------------- |
+| `STORAGE_DIR`     | `./public`  | the per-application folders                 |
+| `UPLOAD_TMP_DIR`  | `./tmp`     | where uploads wait before they are moved    |
+| `MAX_ASSET_MB`    | `50`        | largest asset                               |
+| `UPLOAD_DIR`      | `./uploads` | read only by the migration, to find old files |
+
+Relative paths resolve against `server/`, wherever the process is started from.
+
+---
+
 ## Interface
 
 Written mobile-first: the base stylesheet targets a phone and `min-width`
@@ -210,9 +292,12 @@ server/
   src/
     index.js  app.js  db.js
     lib/       config.js  http.js  serialize.js  params.js
+               storage.js           every path under public/ goes through here
+               slug.cjs             folder and file naming, shared with migrations
     middleware/auth.js  upload.js
     routes/    auth.routes.js  users.routes.js  applications.routes.js
-  uploads/                   APKs and icons, never served statically
+  public/                    one folder per application, never served statically
+  tmp/                       uploads waiting to be validated
 
 client/
   src/
@@ -226,6 +311,7 @@ client/
       AppFormModal.jsx       create / edit an application, with its icon
       VersionModal.jsx       upload or edit a version, with status and expiry
       NoteModal.jsx          the note on a version
+      AssetsCard.jsx         the application's assets/ folder
     pages/
       Login.jsx  ApplicationsPage.jsx  ApplicationDetailPage.jsx
       UsersPage.jsx  AccountPage.jsx
@@ -289,12 +375,13 @@ Anything else the CLI supports is available through `npm run knex -- <command>`.
 | `..._application_icons`          | icon columns                                          |
 | `..._create_version_access`      | per-version access overrides                          |
 | `..._add_version_note`           | the free-form `note` on a version                     |
+| `..._application_storage_folders`| `storage_dir`, per-app file uniqueness, and moves files from `uploads/` into `public/{app}/` |
 
 Both seeds are safe to run repeatedly. `01_users` upserts on email, so it
 resets the demo passwords without touching accounts created in the app.
-`02_applications` replaces the demo applications and sweeps its own placeholder
-files (all named `seed-…`), so re-seeding never duplicates rows or leaves stray
-files in `uploads/`.
+`02_applications` replaces all applications — rows and folders under
+`public/` together — so re-seeding reproduces exactly the same tree every time.
+Only run it where losing the existing applications is fine.
 
 For production, set `NODE_ENV=production` and run `npm run db:migrate` as part
 of the deploy; the `production` block in `knexfile.cjs` enables TLS and a
@@ -337,6 +424,10 @@ All routes are under `/api`. Everything except `POST /auth/login` needs
 | PATCH  | `/applications/:id/status`      | admin | activate / deactivate                |
 | DELETE | `/applications/:id`             | admin | delete, with its versions and files  |
 | PUT    | `/applications/:id/access`      | admin | replace the application access list  |
+| GET    | `/applications/:id/assets`      | auth  | list the files in `assets/`          |
+| GET    | `/applications/:id/assets/:name`| auth  | download one                         |
+| POST   | `/applications/:id/assets`      | admin | upload (multipart `file`)            |
+| DELETE | `/applications/:id/assets/:name`| admin | delete one                           |
 
 ### APK versions
 
@@ -398,8 +489,14 @@ migration is left in place and simply unused.
   server — every response goes through `lib/serialize.js`.
 - The token is verified **and** the account reloaded on every request, so a
   demotion or a disabled account takes effect at once.
-- `uploads/` is not served statically. Every APK and icon request runs the
-  access check first, and downloads are recorded in `downloads`.
+- `public/` is not served statically; nothing outside `/api` is. Every APK,
+  icon, and asset request runs the access check first, and APK downloads are
+  recorded in `downloads`.
+- File responses carry `X-Content-Type-Options: nosniff` and a
+  `default-src 'none'; sandbox` CSP, so an SVG or text file opened directly
+  cannot run anything.
+- File and folder names are sanitised and every resolved path is checked to
+  stay inside its folder — see *File storage*.
 - A refused version download returns the same 404 whether it is switched off,
   expired, or simply not granted, so the response does not leak which.
 - Uploads are limited by `MAX_UPLOAD_MB` / `MAX_ICON_MB` and restricted by
@@ -417,8 +514,10 @@ migration is left in place and simply unused.
   you read the true `versionCode` instead of trusting what was typed.
 - Icons are served through the API on every request. Put a cache or a CDN in
   front, or move them to object storage with signed URLs.
-- Binaries sit on the local disk. Point `UPLOAD_DIR` at a mounted volume, or
-  swap `middleware/upload.js` for S3-compatible storage.
+- Files sit on the local disk. Point `STORAGE_DIR` at a mounted volume and back
+  it up with the database — a row without its file, or the reverse, is the one
+  inconsistency the app cannot repair on its own. For S3-compatible storage,
+  `src/lib/storage.js` is the only module to replace.
 - The icon URL carries the token as a query parameter so `<img>` can load it;
   that value can appear in server logs. A short-lived signed URL would be
   tighter.
@@ -427,4 +526,3 @@ migration is left in place and simply unused.
 - Expiry is evaluated against the server clock in UTC, with a date-only input
   treated as the end of that day in the server's timezone. If you have users
   across timezones, store the intended zone alongside the date.
-# apkmanager

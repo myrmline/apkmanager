@@ -5,24 +5,36 @@ import multer from 'multer';
 import { config } from '../lib/config.js';
 import { badRequest } from '../lib/http.js';
 
-fs.mkdirSync(config.uploadDir, { recursive: true });
-
+/**
+ * Uploads land in tmp/ under a random name. A route validates the request,
+ * then moves the file into the application's folder under public/ — so a
+ * rejected upload never touches public/ at all.
+ */
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, config.uploadDir),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase() || '.bin';
-    cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`);
-  },
+  destination: (_req, _file, cb) => cb(null, config.tmpDir),
+  filename: (_req, _file, cb) => cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}`),
 });
+
+/**
+ * Browsers send the filename as raw UTF-8 bytes, which multer decodes as
+ * latin1. Re-decode it, so "لقطة شاشة.png" arrives intact.
+ */
+function fixName(file) {
+  const decoded = Buffer.from(file.originalname, 'latin1').toString('utf8');
+  if (!decoded.includes('\uFFFD')) file.originalname = decoded;
+}
+
+const accept = (extensions, message) => (_req, file, cb) => {
+  fixName(file);
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (!extensions.includes(ext)) return cb(badRequest(message));
+  cb(null, true);
+};
 
 export const uploadApk = multer({
   storage,
   limits: { fileSize: config.maxUploadBytes, files: 1 },
-  fileFilter: (_req, file, cb) => {
-    const isApk = path.extname(file.originalname).toLowerCase() === '.apk';
-    if (!isApk) return cb(badRequest('Only .apk files can be uploaded.'));
-    cb(null, true);
-  },
+  fileFilter: accept(['.apk'], 'Only .apk files can be uploaded.'),
 }).single('file');
 
 const ICON_TYPES = {
@@ -33,34 +45,51 @@ const ICON_TYPES = {
   '.svg': 'image/svg+xml',
 };
 
-/** Optional `icon` field on the application create and update forms. */
 export const uploadIcon = multer({
   storage,
   limits: { fileSize: config.maxIconBytes, files: 1 },
-  fileFilter: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (!ICON_TYPES[ext]) return cb(badRequest('Use a PNG, JPEG, WebP, or SVG image.'));
-    cb(null, true);
-  },
+  fileFilter: accept(Object.keys(ICON_TYPES), 'Use a PNG, JPEG, WebP, or SVG image.'),
 }).single('icon');
 
-export const iconMime = (originalName) =>
-  ICON_TYPES[path.extname(originalName).toLowerCase()] || 'application/octet-stream';
+/** What an application folder may hold besides its APKs and icon. */
+export const ASSET_TYPES = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.pdf': 'application/pdf',
+  '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
+  '.json': 'application/json',
+  '.csv': 'text/csv; charset=utf-8',
+  '.zip': 'application/zip',
+};
 
-/** SHA-256 of a stored upload, shown on the version so a build can be verified. */
-export function checksumOf(storedName) {
+export const uploadAsset = multer({
+  storage,
+  limits: { fileSize: config.maxAssetBytes, files: 1 },
+  fileFilter: accept(
+    Object.keys(ASSET_TYPES),
+    'Use an image, PDF, text, Markdown, JSON, CSV, or ZIP file.',
+  ),
+}).single('file');
+
+export const mimeFor = (name, table = { ...ICON_TYPES, ...ASSET_TYPES }) =>
+  table[path.extname(name).toLowerCase()] || 'application/octet-stream';
+
+/** SHA-256 of a file, shown on the version so a build can be verified. */
+export function checksumOf(filePath) {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash('sha256');
-    fs.createReadStream(path.join(config.uploadDir, storedName))
+    fs.createReadStream(filePath)
       .on('data', (chunk) => hash.update(chunk))
       .on('end', () => resolve(hash.digest('hex')))
       .on('error', reject);
   });
 }
 
-export function removeUpload(storedName) {
-  if (!storedName) return;
-  fs.promises.unlink(path.join(config.uploadDir, storedName)).catch(() => {});
+/** Drop an upload still sitting in tmp/ — the request failed before it moved. */
+export function discardTemp(file) {
+  if (file?.path) fs.promises.rm(file.path, { force: true }).catch(() => {});
 }
-
-export const uploadPath = (storedName) => path.join(config.uploadDir, storedName);

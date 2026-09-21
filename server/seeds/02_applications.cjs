@@ -1,16 +1,24 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { slugify, safeFileName } = require('../src/lib/slug.cjs');
 
 require('dotenv').config();
 
-const uploadDir = path.resolve(__dirname, '..', process.env.UPLOAD_DIR || './uploads');
+const storageRoot = path.resolve(__dirname, '..', process.env.STORAGE_DIR || 'public');
 
 /**
- * Demo applications. The .apk files are placeholders, not installable apps —
- * they exist so downloads, sizes, and checksums behave like the real thing.
- * Everything written here is named "seed-…", so re-seeding cleans up after
- * itself without touching anything uploaded through the app.
+ * Demo applications, written in the same layout the API uses:
+ *
+ *   public/field-service/icon.svg
+ *   public/field-service/apks/1.4.0.apk
+ *   public/field-service/assets/release-notes.md
+ *
+ * The .apk files are placeholders, not installable apps — they exist so
+ * downloads, sizes, and checksums behave like the real thing.
+ *
+ * Like the rows, the folders are replaced on every run: this seed removes every
+ * application, so it removes every application folder with it.
  */
 const applications = [
   {
@@ -19,6 +27,10 @@ const applications = [
     description: 'Job list and proof-of-visit capture for engineers on the road.',
     status: 'active',
     icon: { tint: '#0e7c86', glyph: 'FS' },
+    assets: {
+      'release-notes.md': '# Field Service\n\n## 1.4.0\n\n- Route planning\n- Background photo upload\n',
+      'install-guide.txt': 'Uninstall any 1.3.x build before installing 1.4.0: the signing key changed.\n',
+    },
     allow: ['amira@example.com', 'karim@example.com'],
     versions: [
       {
@@ -96,26 +108,26 @@ const applications = [
 ];
 
 /** A flat-colour SVG tile, so every application has an icon without binaries. */
-function writeIcon({ tint, glyph }) {
-  const storedName = `seed-icon-${glyph.toLowerCase()}-${crypto.randomBytes(4).toString('hex')}.svg`;
+function writeIcon(dir, { tint, glyph }) {
+  const storedName = 'icon.svg';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
   <rect width="96" height="96" rx="22" fill="${tint}"/>
   <text x="48" y="60" text-anchor="middle" font-family="system-ui, sans-serif"
         font-size="34" font-weight="600" fill="#ffffff">${glyph}</text>
 </svg>`;
-  fs.writeFileSync(path.join(uploadDir, storedName), svg, 'utf8');
+  fs.writeFileSync(path.join(dir, storedName), svg, 'utf8');
   return { storedName, originalName: `${glyph.toLowerCase()}-icon.svg`, mime: 'image/svg+xml' };
 }
 
 /** A file of roughly the right size that starts with the ZIP magic bytes. */
-function writePlaceholderApk(label, sizeKb) {
-  const storedName = `seed-${label}-${crypto.randomBytes(5).toString('hex')}.apk`;
+function writePlaceholderApk(dir, label, version, sizeKb) {
+  const storedName = `${safeFileName(version, 'version')}.apk`;
   const header = Buffer.from('PK\u0003\u0004');
   const body = Buffer.alloc(sizeKb * 1024 - header.length, 0x20);
   body.write(`placeholder build ${label} — not an installable APK`);
   const contents = Buffer.concat([header, body]);
 
-  fs.writeFileSync(path.join(uploadDir, storedName), contents);
+  fs.writeFileSync(path.join(dir, 'apks', storedName), contents);
   return {
     storedName,
     size: contents.length,
@@ -126,15 +138,14 @@ function writePlaceholderApk(label, sizeKb) {
 const shiftDays = (days) => new Date(Date.now() + days * 86400000);
 
 exports.seed = async (knex) => {
-  fs.mkdirSync(uploadDir, { recursive: true });
+  fs.mkdirSync(storageRoot, { recursive: true });
 
-  // Clear the previous demo data. Versions and grants go with the applications
-  // through ON DELETE CASCADE. Binaries are swept from disk by their "seed-"
-  // prefix rather than from the table, so a rollback cannot leave orphans.
+  // Clear everything: rows (versions and grants follow by ON DELETE CASCADE)
+  // and every application folder, including any left behind by a rollback.
   await knex('applications').del();
-  fs.readdirSync(uploadDir)
-    .filter((name) => name.startsWith('seed-'))
-    .forEach((name) => fs.rmSync(path.join(uploadDir, name), { force: true }));
+  fs.readdirSync(storageRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .forEach((entry) => fs.rmSync(path.join(storageRoot, entry.name), { recursive: true, force: true }));
 
   const admin = await knex('users').where({ role: 'admin' }).orderBy('id').first();
   if (!admin) throw new Error('Run the users seed first: there is no admin to own these apps.');
@@ -143,7 +154,15 @@ exports.seed = async (knex) => {
   const idFor = (email) => people.find((user) => user.email === email)?.id;
 
   for (const app of applications) {
-    const icon = writeIcon(app.icon);
+    const storageDir = slugify(app.name);
+    const dir = path.join(storageRoot, storageDir);
+    fs.mkdirSync(path.join(dir, 'apks'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'assets'), { recursive: true });
+
+    const icon = writeIcon(dir, app.icon);
+    Object.entries(app.assets || {}).forEach(([name, text]) =>
+      fs.writeFileSync(path.join(dir, 'assets', name), text, 'utf8'),
+    );
     const newest = Math.min(...app.versions.map((version) => version.daysAgo));
     const oldest = Math.max(...app.versions.map((version) => version.daysAgo));
 
@@ -153,6 +172,7 @@ exports.seed = async (knex) => {
         package_name: app.packageName,
         description: app.description,
         status: app.status,
+        storage_dir: storageDir,
         icon_stored_name: icon.storedName,
         icon_original_name: icon.originalName,
         icon_mime: icon.mime,
@@ -164,7 +184,9 @@ exports.seed = async (knex) => {
 
     for (const version of app.versions) {
       const apk = writePlaceholderApk(
+        dir,
         `${app.packageName.split('.').pop()}-${version.version}`,
+        version.version,
         version.sizeKb,
       );
 
@@ -206,7 +228,7 @@ exports.seed = async (knex) => {
     if (grants.length) await knex('application_access').insert(grants);
 
     console.log(
-      `  ${app.name.padEnd(20)} ${app.versions.length} version(s), ` +
+      `  public/${storageDir.padEnd(18)} ${app.versions.length} version(s), ` +
         `${grants.length} user(s)${app.status === 'inactive' ? ', inactive' : ''}`,
     );
   }

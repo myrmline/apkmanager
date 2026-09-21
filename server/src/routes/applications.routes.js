@@ -1,23 +1,62 @@
 import express from 'express';
 import fs from 'node:fs';
+import path from 'node:path';
 import { db, transaction } from '../db.js';
 import { asyncHandler, badRequest, conflict, forbidden, notFound } from '../lib/http.js';
 import { requireAdmin, requireAuth } from '../middleware/auth.js';
 import {
   checksumOf,
-  iconMime,
-  removeUpload,
+  discardTemp,
+  mimeFor,
   uploadApk,
+  uploadAsset,
   uploadIcon,
-  uploadPath,
 } from '../middleware/upload.js';
 import { publicApplication, publicUser, publicVersion } from '../lib/serialize.js';
 import { intParam } from '../lib/params.js';
+import {
+  APK_DIR,
+  allocateDir,
+  apkPath,
+  appDir,
+  assetPath,
+  assetsDir,
+  ensureAppDir,
+  iconPath,
+  listAssets,
+  placeFile,
+  removeAppDir,
+  removeFile,
+  renameAppDir,
+  renameFile,
+  safeFileName,
+  slugify,
+} from '../lib/storage.js';
 
 const router = express.Router();
 router.use(requireAuth);
 
 const isAdmin = (req) => req.user.role === 'admin';
+
+/** Admins also see which folder under public/ holds the application. */
+const presentApplication = (req, row) => ({
+  ...publicApplication(row),
+  ...(isAdmin(req) ? { storageDir: row.storage_dir } : {}),
+});
+
+const isDirTaken = (executor) => async (candidate) =>
+  Boolean(await (executor || db)('applications').where({ storage_dir: candidate }).first('id'));
+
+/**
+ * File responses are always downloads or images, never pages: nosniff stops a
+ * browser guessing a type, and the CSP means an SVG or HTML file opened
+ * directly cannot run anything.
+ */
+function fileHeaders(res, type) {
+  res.setHeader('Content-Type', type);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+}
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -269,7 +308,7 @@ router.get(
           },
         );
 
-      return res.json({ applications: rows.map(publicApplication) });
+      return res.json({ applications: rows.map((row) => presentApplication(req, row)) });
     }
 
     // A user gets the versions they may download, newest first, and the
@@ -337,7 +376,7 @@ router.get(
       ]);
 
       return res.json({
-        application: publicApplication(application),
+        application: presentApplication(req, application),
         versions: versions.map(publicVersion),
         allowedUsers: allowed.map((row) => ({ ...publicUser(row), grantedAt: row.granted_at })),
       });
@@ -363,12 +402,11 @@ router.get(
   asyncHandler(async (req, res) => {
     const application = await getApplicationOr404(intParam(req.params.id));
     await assertCanRead(req, application);
-    if (!application.icon_stored_name) throw notFound('This application has no icon.');
-
-    const file = uploadPath(application.icon_stored_name);
+    const file = iconPath(application);
+    if (!file) throw notFound('This application has no icon.');
     if (!fs.existsSync(file)) throw notFound('The stored icon is missing from the server.');
 
-    res.setHeader('Content-Type', application.icon_mime || iconMime(application.icon_stored_name));
+    fileHeaders(res, application.icon_mime || mimeFor(application.icon_stored_name));
     res.setHeader('Cache-Control', 'private, max-age=300');
     fs.createReadStream(file).pipe(res);
   }),
@@ -394,18 +432,30 @@ router.post(
   uploadIcon,
   asyncHandler(async (req, res) => {
     const icon = req.file;
+    let createdDir = null;
     try {
       const input = readApplicationInput(req.body);
       const userIds = parseUserIds(req.body.userIds);
 
       const application = await transaction(async (trx) => {
+        // The folder is created inside the transaction: if the insert fails,
+        // the catch below removes it again.
+        const storageDir = await allocateDir(input.name, isDirTaken(trx));
+        createdDir = storageDir;
+        const dir = await ensureAppDir(storageDir);
+
+        const iconName = icon
+          ? await placeFile(icon.path, dir, `icon${path.extname(icon.originalname).toLowerCase()}`)
+          : null;
+
         const [row] = await trx('applications')
           .insert({
             ...input,
+            storage_dir: storageDir,
             created_by: req.user.id,
-            icon_stored_name: icon?.filename || null,
+            icon_stored_name: iconName,
             icon_original_name: icon?.originalname || null,
-            icon_mime: icon ? iconMime(icon.originalname) : null,
+            icon_mime: icon ? mimeFor(icon.originalname) : null,
           })
           .returning('*');
 
@@ -413,9 +463,10 @@ router.post(
         return row;
       });
 
-      res.status(201).json({ application: publicApplication(application) });
+      res.status(201).json({ application: presentApplication(req, application) });
     } catch (err) {
-      if (icon) removeUpload(icon.filename);
+      discardTemp(icon);
+      if (createdDir) await removeAppDir(createdDir);
       throw err;
     }
   }),
@@ -428,31 +479,48 @@ router.put(
   uploadIcon,
   asyncHandler(async (req, res) => {
     const icon = req.file;
+    let renamed = null; // [from, to], so a failed update can put the folder back
     try {
       const application = await getApplicationOr404(intParam(req.params.id));
       const input = readApplicationInput(req.body);
       const removeCurrentIcon = parseBool(req.body.removeIcon);
       const keepIcon = !icon && !removeCurrentIcon;
 
+      // A new name means a new folder name. The folder only moves when the
+      // slug itself changes, so fixing a capital letter does not rename it.
+      let storageDir = application.storage_dir;
+      if (slugify(input.name) !== slugify(application.name)) {
+        storageDir = await allocateDir(input.name, isDirTaken());
+        await renameAppDir(application.storage_dir, storageDir);
+        renamed = [application.storage_dir, storageDir];
+      }
+      const moved = { ...application, storage_dir: storageDir };
+
+      let iconFields = {};
+      if (!keepIcon) {
+        await removeFile(iconPath(moved));
+        iconFields = {
+          icon_stored_name: icon
+            ? await placeFile(
+                icon.path,
+                appDir(moved),
+                `icon${path.extname(icon.originalname).toLowerCase()}`,
+              )
+            : null,
+          icon_original_name: icon?.originalname || null,
+          icon_mime: icon ? mimeFor(icon.originalname) : null,
+        };
+      }
+
       const [row] = await db('applications')
         .where({ id: application.id })
-        .update({
-          ...input,
-          updated_at: db.fn.now(),
-          ...(keepIcon
-            ? {}
-            : {
-                icon_stored_name: icon?.filename || null,
-                icon_original_name: icon?.originalname || null,
-                icon_mime: icon ? iconMime(icon.originalname) : null,
-              }),
-        })
+        .update({ ...input, storage_dir: storageDir, updated_at: db.fn.now(), ...iconFields })
         .returning('*');
 
-      if (!keepIcon && application.icon_stored_name) removeUpload(application.icon_stored_name);
-      res.json({ application: publicApplication(row) });
+      res.json({ application: presentApplication(req, row) });
     } catch (err) {
-      if (icon) removeUpload(icon.filename);
+      discardTemp(icon);
+      if (renamed) await renameAppDir(renamed[1], renamed[0]).catch(() => {});
       throw err;
     }
   }),
@@ -473,7 +541,7 @@ router.patch(
       .update({ status, updated_at: db.fn.now() })
       .returning('*');
 
-    res.json({ application: publicApplication(row) });
+    res.json({ application: presentApplication(req, row) });
   }),
 );
 
@@ -484,14 +552,10 @@ router.delete(
   asyncHandler(async (req, res) => {
     const application = await getApplicationOr404(intParam(req.params.id));
 
-    const stored = await db('apk_versions')
-      .where({ application_id: application.id })
-      .pluck('stored_name');
-
+    // Rows first: if the delete fails, the files are still there to match.
     await db('applications').where({ id: application.id }).del();
+    await removeAppDir(application.storage_dir);
 
-    stored.forEach(removeUpload);
-    removeUpload(application.icon_stored_name);
     res.json({ ok: true });
   }),
 );
@@ -525,7 +589,7 @@ router.post(
   uploadApk,
   asyncHandler(async (req, res) => {
     if (!req.file) throw badRequest('Attach an .apk file.');
-    const stored = req.file.filename;
+    let placed = null;
 
     try {
       const application = await getApplicationOr404(intParam(req.params.id));
@@ -541,7 +605,17 @@ router.post(
       const expiresAt = parseExpiry(req.body.expiresAt);
       const makeCurrent = parseBool(req.body.makeCurrent, true);
       const restrictTo = parseUserIds(req.body.userIds);
-      const checksum = await checksumOf(stored);
+      const checksum = await checksumOf(req.file.path);
+
+      // public/{application}/apks/{version}.apk
+      await ensureAppDir(application.storage_dir);
+      const apkDir = appDir(application) + path.sep + APK_DIR;
+      const storedName = await placeFile(
+        req.file.path,
+        apkDir,
+        `${safeFileName(version, 'version')}.apk`,
+      );
+      placed = apkPath(application, storedName);
 
       const created = await transaction(async (trx) => {
         const [row] = await trx('apk_versions')
@@ -552,7 +626,7 @@ router.post(
             is_active: isActive,
             expires_at: expiresAt,
             original_name: req.file.originalname,
-            stored_name: stored,
+            stored_name: storedName,
             size_bytes: req.file.size,
             checksum,
             uploaded_by: req.user.id,
@@ -570,7 +644,8 @@ router.post(
 
       res.status(201).json({ version: publicVersion(created) });
     } catch (err) {
-      removeUpload(stored);
+      discardTemp(req.file);
+      await removeFile(placed);
       throw err;
     }
   }),
@@ -587,16 +662,45 @@ router.put(
     const version = String(req.body.version ?? existing.version).trim();
     if (!version) throw badRequest('Give this build a version, for example 1.0.1.');
 
-    const [row] = await db('apk_versions')
-      .where({ id: existing.id })
-      .update({
-        version,
-        description: String(req.body.description ?? existing.description ?? '').trim() || null,
-        is_active: parseBool(req.body.isActive, existing.is_active),
-        expires_at:
-          req.body.expiresAt === undefined ? existing.expires_at : parseExpiry(req.body.expiresAt),
-      })
-      .returning('*');
+    if (version !== existing.version) {
+      const clash = await db('apk_versions')
+        .where({ application_id: applicationId, version })
+        .whereNot({ id: existing.id })
+        .first('id');
+      if (clash) throw conflict(`Version ${version} already exists for this app.`);
+    }
+
+    // A new version number renames apks/{version}.apk to match.
+    const application = await getApplicationOr404(applicationId);
+    const apkDir = appDir(application) + path.sep + APK_DIR;
+    let storedName = existing.stored_name;
+    if (version !== existing.version) {
+      storedName = await renameFile(
+        apkDir,
+        existing.stored_name,
+        `${safeFileName(version, 'version')}.apk`,
+      );
+    }
+
+    let row;
+    try {
+      [row] = await db('apk_versions')
+        .where({ id: existing.id })
+        .update({
+          version,
+          stored_name: storedName,
+          description: String(req.body.description ?? existing.description ?? '').trim() || null,
+          is_active: parseBool(req.body.isActive, existing.is_active),
+          expires_at:
+            req.body.expiresAt === undefined ? existing.expires_at : parseExpiry(req.body.expiresAt),
+        })
+        .returning('*');
+    } catch (err) {
+      if (storedName !== existing.stored_name) {
+        await renameFile(apkDir, storedName, existing.stored_name).catch(() => {});
+      }
+      throw err;
+    }
 
     await touch(null, applicationId);
     res.json({ version: publicVersion(row) });
@@ -688,8 +792,9 @@ router.delete(
     const applicationId = intParam(req.params.id, 'That application no longer exists.');
     const existing = await getVersionOr404(applicationId, intParam(req.params.versionId));
 
+    const application = await getApplicationOr404(applicationId);
     await db('apk_versions').where({ id: existing.id }).del();
-    removeUpload(existing.stored_name);
+    await removeFile(apkPath(application, existing.stored_name));
 
     // If the current version went away, promote the newest usable one.
     if (existing.is_current) {
@@ -710,13 +815,13 @@ router.delete(
 
 /* ---------------------------------------------------------------- downloads */
 
-async function sendVersion(req, res, versionRow) {
-  const file = uploadPath(versionRow.stored_name);
+async function sendVersion(req, res, application, versionRow) {
+  const file = apkPath(application, versionRow.stored_name);
   if (!fs.existsSync(file)) throw notFound('The stored build is missing from the server.');
 
   await db('downloads').insert({ version_id: versionRow.id, user_id: req.user.id });
 
-  res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+  fileHeaders(res, 'application/vnd.android.package-archive');
   res.download(file, versionRow.original_name);
 }
 
@@ -739,7 +844,7 @@ router.get(
       .first('v.*');
 
     if (!version) throw notFound('No version is available for download.');
-    await sendVersion(req, res, version);
+    await sendVersion(req, res, application, version);
   }),
 );
 
@@ -752,7 +857,7 @@ router.get(
     const versionId = intParam(req.params.versionId, 'That version is not available for download.');
 
     if (isAdmin(req)) {
-      return sendVersion(req, res, await getVersionOr404(application.id, versionId));
+      return sendVersion(req, res, application, await getVersionOr404(application.id, versionId));
     }
 
     // One query, so the reason a version is unavailable — switched off, expired,
@@ -764,7 +869,98 @@ router.get(
       .first('v.*');
 
     if (!version) throw notFound('That version is not available for download.');
-    await sendVersion(req, res, version);
+    await sendVersion(req, res, application, version);
+  }),
+);
+
+/* ------------------------------------------------------------------- assets */
+
+/**
+ * Anything else that belongs to an application: screenshots, guides, notes.
+ * The assets/ folder is the index — there is no table — so whatever is in it
+ * is what gets listed, and nothing has to be registered.
+ *
+ * Reading follows the same rule as the application itself: admins always,
+ * others when they can download at least one of its versions.
+ */
+
+/** The asset name from the URL, checked against what was actually stored. */
+function assetNameParam(raw) {
+  const name = safeFileName(raw, '');
+  if (!name || name !== raw) throw notFound('That file is not available.');
+  return name;
+}
+
+// GET /api/applications/:id/assets
+router.get(
+  '/:id/assets',
+  asyncHandler(async (req, res) => {
+    const application = await getApplicationOr404(intParam(req.params.id));
+    await assertCanRead(req, application);
+    res.json({ assets: await listAssets(application) });
+  }),
+);
+
+// GET /api/applications/:id/assets/:name
+router.get(
+  '/:id/assets/:name',
+  asyncHandler(async (req, res) => {
+    const application = await getApplicationOr404(intParam(req.params.id));
+    await assertCanRead(req, application);
+
+    const name = assetNameParam(req.params.name);
+    const file = assetPath(application, name);
+    const stat = await fs.promises.stat(file).catch(() => null);
+    if (!stat?.isFile()) throw notFound('That file is not available.');
+
+    fileHeaders(res, mimeFor(name));
+    res.download(file, name);
+  }),
+);
+
+// POST /api/applications/:id/assets — multipart `file`
+router.post(
+  '/:id/assets',
+  requireAdmin,
+  uploadAsset,
+  asyncHandler(async (req, res) => {
+    if (!req.file) throw badRequest('Attach a file.');
+    try {
+      const application = await getApplicationOr404(intParam(req.params.id));
+      await ensureAppDir(application.storage_dir);
+
+      const name = await placeFile(
+        req.file.path,
+        assetsDir(application),
+        safeFileName(req.file.originalname, `asset${path.extname(req.file.originalname)}`),
+      );
+      await touch(null, application.id);
+
+      const stat = await fs.promises.stat(assetPath(application, name));
+      res.status(201).json({
+        asset: { name, sizeBytes: stat.size, modifiedAt: stat.mtime },
+      });
+    } catch (err) {
+      discardTemp(req.file);
+      throw err;
+    }
+  }),
+);
+
+// DELETE /api/applications/:id/assets/:name
+router.delete(
+  '/:id/assets/:name',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const application = await getApplicationOr404(intParam(req.params.id));
+    const file = assetPath(application, assetNameParam(req.params.name));
+
+    const stat = await fs.promises.stat(file).catch(() => null);
+    if (!stat?.isFile()) throw notFound('That file is not available.');
+
+    await removeFile(file);
+    await touch(null, application.id);
+    res.json({ ok: true });
   }),
 );
 

@@ -147,6 +147,14 @@ export const api = {
   deleteVersion: (id, versionId) =>
     request(`/applications/${id}/versions/${versionId}`, { method: 'DELETE' }),
 
+  listAssets: (id) => request(`/applications/${id}/assets`),
+  uploadAsset: (id, formData, onProgress) =>
+    upload(`/applications/${id}/assets`, formData, onProgress),
+  deleteAsset: (id, name) =>
+    request(`/applications/${id}/assets/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  downloadAsset: (id, name) =>
+    downloadFile(`/applications/${id}/assets/${encodeURIComponent(name)}`),
+
   downloadCurrent: (id) => downloadFile(`/applications/${id}/download`),
   downloadVersion: (id, versionId) =>
     downloadFile(`/applications/${id}/versions/${versionId}/download`),
