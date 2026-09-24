@@ -5,6 +5,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { useI18n } from '../lib/i18n.jsx';
 import { AppIcon, Empty, Icon, Loading, Status, Version, useToast } from '../components/ui.jsx';
 import AppFormModal from '../components/AppFormModal.jsx';
+import DownloadButton from '../components/DownloadButton.jsx';
 
 export default function ApplicationsPage() {
   const { isAdmin } = useAuth();
@@ -38,9 +39,10 @@ export default function ApplicationsPage() {
     if (isAdmin) api.listUsers().then(({ users: rows }) => setUsers(rows)).catch(() => {});
   }, [isAdmin]);
 
-  const download = async (application) => {
+  const download = async (application, onProgress) => {
     try {
-      toast(t('apps.toast.downloading', { name: await api.downloadCurrent(application.id) }));
+      const name = await api.downloadCurrent(application.id, onProgress);
+      toast(t('apps.toast.downloading', { name }));
     } catch (err) {
       toast(err.message, 'bad');
     }
@@ -153,19 +155,15 @@ export default function ApplicationsPage() {
                 <Link className="btn btn-quiet btn-sm" to={`/apps/${application.id}`}>
                   {t('common.actions.open')}
                 </Link>
-                <button
-                  className="btn btn-quiet btn-sm"
-                  onClick={() => download(application)}
+                <DownloadButton
+                  run={(onProgress) => download(application, onProgress)}
                   disabled={!application.currentVersion}
                   title={
                     application.currentVersion
                       ? `${t('common.actions.download')} · ${fmt.size(application.currentVersion.sizeBytes)}`
                       : t('apps.detail.noVersionsTitle')
                   }
-                >
-                  <Icon name="download" size={15} />
-                  <span className="sr-only">{t('common.actions.download')}</span>
-                </button>
+                />
               </span>
             </article>
           ))}

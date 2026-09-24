@@ -50,12 +50,19 @@ export function makeFormatters(intl, t) {
     minute: '2-digit',
   });
 
+  const percent = new Intl.NumberFormat(intl, {
+    style: 'percent',
+    maximumFractionDigits: 0,
+  });
+
   const date = (value) => (value ? dateOnly.format(new Date(value)) : '—');
 
   return {
     date,
     dateTime: (value) => (value ? dateAndTime.format(new Date(value)) : '—'),
     size: (bytes) => fileSize(bytes, intl),
+    /** 42 -> "42%", or "42 %" in French, with the locale's own percent sign. */
+    percent: (value) => percent.format(value / 100),
 
     /** "today", "yesterday", "N days ago", then an absolute date. */
     relative(value) {

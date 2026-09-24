@@ -225,6 +225,15 @@ queries add tablet and desktop layout.
   with a header row that fills 100% of the content width, up to a 1440px
   reading limit.
 - **Modals** — bottom sheets on a phone, centred dialogs from 600px.
+- **Downloads** — the button shows a spinner the moment it is clicked and is
+  disabled until the file is in hand, so it cannot be started twice. The
+  response is read as a stream and the percentage is counted from
+  `Content-Length`: 0% up to 100%, each number reported once. A file that
+  arrives in a single chunk goes straight from 0% to 100% rather than flashing
+  an intermediate number. If the length is missing — a chunked or re-encoding
+  proxy in front of the API — the button keeps the spinner and shows no number
+  rather than inventing one. Nothing about the API changed; the same request is
+  read differently.
 - **Touch** — 44px targets, 15px inputs so iOS does not zoom on focus.
 - **Dark mode** — a switch in the top bar, plus Light / Dark / *Match my
   device* on the account page. The choice is stored in `localStorage`, applied
@@ -312,6 +321,7 @@ client/
       VersionModal.jsx       upload or edit a version, with status and expiry
       NoteModal.jsx          the note on a version
       AssetsCard.jsx         the application's assets/ folder
+      DownloadButton.jsx     download with progress, disabled while running
     pages/
       Login.jsx  ApplicationsPage.jsx  ApplicationDetailPage.jsx
       UsersPage.jsx  AccountPage.jsx

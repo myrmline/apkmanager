@@ -19,6 +19,7 @@ import AppFormModal from '../components/AppFormModal.jsx';
 import VersionModal from '../components/VersionModal.jsx';
 import NoteModal from '../components/NoteModal.jsx';
 import AssetsCard from '../components/AssetsCard.jsx';
+import DownloadButton from '../components/DownloadButton.jsx';
 import UserPicker from '../components/UserPicker.jsx';
 
 export default function ApplicationDetailPage() {
@@ -66,9 +67,10 @@ export default function ApplicationDetailPage() {
     }
   };
 
-  const download = async (version) => {
+  const download = async (version, onProgress) => {
     try {
-      toast(t('apps.toast.downloading', { name: await api.downloadVersion(id, version.id) }));
+      const name = await api.downloadVersion(id, version.id, onProgress);
+      toast(t('apps.toast.downloading', { name }));
     } catch (err) {
       toast(err.message, 'bad');
     }
@@ -258,9 +260,10 @@ export default function ApplicationDetailPage() {
                   )}
 
                   <div className="vcard-actions">
-                    <button className="btn btn-quiet btn-sm" onClick={() => download(version)}>
-                      <Icon name="download" size={15} /> {t('common.actions.download')}
-                    </button>
+                    <DownloadButton
+                      label={t('common.actions.download')}
+                      run={(onProgress) => download(version, onProgress)}
+                    />
 
                     {isAdmin && (
                       <Switch

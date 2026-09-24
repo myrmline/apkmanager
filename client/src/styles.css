@@ -912,6 +912,34 @@ input[type='radio'] {
   font-size: 14px;
 }
 
+/* --------------------------------------------------- Download spinner */
+
+.spinner {
+  display: inline-block;
+  flex: none;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  opacity: 0.9;
+  animation: spin 0.7s linear infinite;
+}
+
+/* The button keeps its width between "Download" and "42%", so a row of
+   buttons does not jump about while one of them is working. */
+.btn[aria-busy='true'] {
+  min-width: 7.5em;
+}
+
+.btn-sm[aria-busy='true'] {
+  min-width: 6em;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* ------------------------------------------------------- Asset list */
 
 .asset-list {
@@ -1303,6 +1331,12 @@ label.btn[aria-disabled='true'] {
   *::after {
     animation: none !important;
     transition: none !important;
+  }
+
+  /* One exception: the download spinner is a status indicator, not decoration.
+     A frozen ring would read as a stuck button, so it keeps turning, slowly. */
+  .spinner {
+    animation: spin 2.4s linear infinite !important;
   }
 }
 

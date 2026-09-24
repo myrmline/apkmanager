@@ -66,8 +66,14 @@ function upload(path, formData, onProgress, method = 'POST') {
   });
 }
 
-/** Fetches the binary with the auth header, then hands it to the browser. */
-async function downloadFile(path) {
+/**
+ * Fetches the file with the auth header, then hands it to the browser.
+ *
+ * `onProgress` is called with a whole percentage as the bytes arrive, or with
+ * `null` when the server did not send a Content-Length — the caller then shows
+ * a spinner without a number rather than inventing one.
+ */
+async function downloadFile(path, onProgress) {
   const res = await fetch(BASE + path, { headers: authHeaders() });
   if (!res.ok) {
     let message = 'The download was refused.';
@@ -83,7 +89,7 @@ async function downloadFile(path) {
   const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
   const name = match ? decodeURIComponent(match[1]) : 'download.apk';
 
-  const url = URL.createObjectURL(await res.blob());
+  const url = URL.createObjectURL(await readBody(res, onProgress));
   const link = document.createElement('a');
   link.href = url;
   link.download = name;
@@ -92,6 +98,48 @@ async function downloadFile(path) {
   link.remove();
   URL.revokeObjectURL(url);
   return name;
+}
+
+/**
+ * Read the response body, reporting progress as it goes.
+ *
+ * Without a Content-Length, or without a readable stream (older browsers),
+ * there is nothing to measure: report `null` once and read it in one go.
+ */
+async function readBody(res, onProgress) {
+  const total = Number(res.headers.get('Content-Length')) || 0;
+  const type = res.headers.get('Content-Type') || 'application/octet-stream';
+
+  if (!total || !res.body?.getReader) {
+    onProgress?.(null);
+    return res.blob();
+  }
+
+  const reader = res.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+  let reported = 0;
+
+  onProgress?.(0);
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.length;
+
+    // 100% is reported once, after the stream ends. A small file that arrives
+    // in one chunk therefore goes 0 -> 100 with nothing in between, and a
+    // proxy that re-encodes cannot push the number past the end either.
+    const percent = Math.floor((loaded / total) * 100);
+    if (percent < 100 && percent !== reported) {
+      reported = percent;
+      onProgress?.(percent);
+    }
+  }
+
+  onProgress?.(100);
+  return new Blob(chunks, { type });
 }
 
 const withQuery = (path, params) => {
@@ -152,10 +200,11 @@ export const api = {
     upload(`/applications/${id}/assets`, formData, onProgress),
   deleteAsset: (id, name) =>
     request(`/applications/${id}/assets/${encodeURIComponent(name)}`, { method: 'DELETE' }),
-  downloadAsset: (id, name) =>
-    downloadFile(`/applications/${id}/assets/${encodeURIComponent(name)}`),
+  downloadAsset: (id, name, onProgress) =>
+    downloadFile(`/applications/${id}/assets/${encodeURIComponent(name)}`, onProgress),
 
-  downloadCurrent: (id) => downloadFile(`/applications/${id}/download`),
-  downloadVersion: (id, versionId) =>
-    downloadFile(`/applications/${id}/versions/${versionId}/download`),
+  downloadCurrent: (id, onProgress) =>
+    downloadFile(`/applications/${id}/download`, onProgress),
+  downloadVersion: (id, versionId, onProgress) =>
+    downloadFile(`/applications/${id}/versions/${versionId}/download`, onProgress),
 };

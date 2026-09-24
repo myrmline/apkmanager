@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useI18n } from '../lib/i18n.jsx';
 import { ConfirmDialog, Icon, Loading, useToast } from './ui.jsx';
+import DownloadButton from './DownloadButton.jsx';
 
 /**
  * The assets/ folder of one application. Everyone who can see the application
@@ -47,9 +48,10 @@ export default function AssetsCard({ application, isAdmin }) {
     }
   };
 
-  const download = async (name) => {
+  const download = async (name, onProgress) => {
     try {
-      toast(t('apps.toast.downloading', { name: await api.downloadAsset(application.id, name) }));
+      const saved = await api.downloadAsset(application.id, name, onProgress);
+      toast(t('apps.toast.downloading', { name: saved }));
     } catch (err) {
       toast(err.message, 'bad');
     }
@@ -92,14 +94,10 @@ export default function AssetsCard({ application, isAdmin }) {
                 </small>
               </span>
               <span className="asset-actions">
-                <button
-                  className="icon-btn"
-                  onClick={() => download(asset.name)}
+                <DownloadButton
+                  run={(onProgress) => download(asset.name, onProgress)}
                   title={t('common.actions.download')}
-                >
-                  <Icon name="download" size={16} />
-                  <span className="sr-only">{t('common.actions.download')}</span>
-                </button>
+                />
                 {isAdmin && (
                   <button
                     className="btn btn-danger-quiet btn-sm"

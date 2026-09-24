@@ -174,6 +174,11 @@ export const Empty = ({ title, body, action }) => (
   </div>
 );
 
+/** A small spinner for inside a button. */
+export const Spinner = ({ size = 15 }) => (
+  <span className="spinner" style={{ width: size, height: size }} aria-hidden="true" />
+);
+
 export const Loading = ({ label }) => {
   const { t } = useI18n();
   return (
